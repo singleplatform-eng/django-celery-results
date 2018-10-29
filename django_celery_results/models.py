@@ -3,6 +3,7 @@ from __future__ import absolute_import, unicode_literals
 
 from django.conf import settings
 from django.db import models
+from django.db.models.indexes import Index
 from django.utils.translation import ugettext_lazy as _
 
 from celery import states
@@ -14,6 +15,23 @@ ALL_STATES = sorted(states.ALL_STATES)
 TASK_STATE_CHOICES = sorted(zip(ALL_STATES, ALL_STATES))
 
 
+class CeleryMySQLIndex(Index):
+    def create_sql(self, model, schema_editor, using=''):
+        sql_create_index = 'CREATE INDEX %(name)s ON %(table)s (%(columns)s(%(size)d))%(extra)s'
+        sql_parameters = self.get_sql_create_template_values(
+            model,
+            schema_editor,
+            using
+        )
+        sql_parameters['size'] = getattr(
+            settings,
+            'DJANGO_CELERY_RESULTS_TASK_ID_MAX_LENGTH',
+            255
+        )
+        sql = sql_create_index % sql_parameters
+        return sql
+
+
 @python_2_unicode_compatible
 class TaskResult(models.Model):
     """Task result/status."""
@@ -21,7 +39,7 @@ class TaskResult(models.Model):
         _('task id'),
         max_length=getattr(
             settings,
-            'DJANGO_CELERY_RESULTS_TASK_ID_LENGTH',
+            'DJANGO_CELERY_RESULTS_TASK_ID_MAX_LENGTH',
             255
         ),
         unique=True
@@ -47,7 +65,7 @@ class TaskResult(models.Model):
         """Table information."""
 
         ordering = ['-date_done']
-
+        indexes = [CeleryMySQLIndex(fields=['task_id'])]
         verbose_name = _('task result')
         verbose_name_plural = _('task results')
 
